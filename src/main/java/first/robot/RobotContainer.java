@@ -1,0 +1,397 @@
+package first.robot;
+
+import com.pathplanner.lib.auto.AutoBuilder;
+import com.pathplanner.lib.auto.NamedCommands;
+import com.pathplanner.lib.events.EventTrigger;
+
+import first.robot.commands.ArmHold;
+import first.robot.commands.AutoAlign;
+import first.robot.commands.DriveCommands;
+import first.robot.commands.ElevatorHold;
+import first.robot.subsystems.arm.Arm;
+import first.robot.subsystems.arm.ArmIO;
+import first.robot.subsystems.arm.ArmIOReal;
+// import first.robot.subsystems.arm.ArmIOSim;
+import first.robot.subsystems.arm.Arm.ArmMode;
+import first.robot.subsystems.climber.Climber;
+import first.robot.subsystems.climber.ClimberIO;
+import first.robot.subsystems.climber.ClimberIOReal;
+// import first.robot.subsystems.climber.ClimberIOSim;
+import first.robot.subsystems.drive.Drive;
+import first.robot.subsystems.drive.GyroIO;
+import first.robot.subsystems.drive.GyroIOPigeon2;
+// import first.robot.subsystems.drive.GyroIOSim;
+import first.robot.subsystems.drive.ModuleIO;
+// import first.robot.subsystems.drive.ModuleIOSim;
+import first.robot.subsystems.drive.ModuleIOTalonFX;
+import first.robot.subsystems.elevator.Elevator;
+import first.robot.subsystems.elevator.ElevatorIO;
+import first.robot.subsystems.elevator.ElevatorIOReal;
+import first.robot.subsystems.elevator.ElevatorIOSim;
+import first.robot.subsystems.endeffector.EndEffector;
+import first.robot.subsystems.endeffector.EndEffectorIO;
+import first.robot.subsystems.endeffector.EndEffectorIOReal;
+// import first.robot.subsystems.endeffector.EndEffectorIOSim;
+import first.robot.subsystems.vision.Vision;
+import first.robot.subsystems.vision.VisionIOLimelight;
+import first.robot.util.RobotIdentity;
+import first.robot.util.SmarterDashboard;
+// import first.robot.util.simulation.AlgaeHandler;
+
+import org.wpilib.math.geometry.Pose2d;
+import org.wpilib.math.geometry.Pose3d;
+import org.wpilib.math.geometry.Rotation2d;
+import org.wpilib.driverstation.Alliance;
+import org.wpilib.driverstation.DriverStation;
+import org.wpilib.driverstation.internal.DriverStationBackend;
+// import org.wpilib.driverstation.XboxController;
+import org.wpilib.smartdashboard.SendableChooser;
+import org.wpilib.smartdashboard.SmartDashboard;
+import org.wpilib.command2.Command;
+import org.wpilib.command2.Commands;
+import org.wpilib.command2.ConditionalCommand;
+import org.wpilib.command2.InstantCommand;
+import org.wpilib.command2.RunCommand;
+import org.wpilib.command2.WaitCommand;
+import org.wpilib.command2.button.CommandNiDsXboxController;
+import org.wpilib.command2.button.JoystickButton;
+import org.wpilib.command2.button.POVButton;
+import org.wpilib.command2.button.Trigger;
+
+import static first.robot.subsystems.vision.VisionConstants.*;
+
+// import org.ironmaple.simulation.SimulatedArena;
+// import org.ironmaple.simulation.drivesims.SwerveDriveSimulation;
+import org.littletonrobotics.junction.Logger;
+
+public class RobotContainer {
+    private Drive drive;
+    private Elevator elevator;
+    public static Arm arm;
+    private EndEffector endEffector;
+    private Vision vision;
+    private Climber climber;
+    public static AutoAlign align;
+
+//     private SwerveDriveSimulation driveSimulation = null;
+
+    //     public static final LEDStrip ledstrip = LEDStrip.getInstance();
+
+    // Controller
+    public static final CommandNiDsXboxController driverController = new CommandNiDsXboxController(0);
+    public static final CommandNiDsXboxController opController = new CommandNiDsXboxController(1);
+
+    // ---------------------------- Driver Controller --------------------------------- //
+
+    private final Trigger strafe_Triggers = new Trigger(
+        () -> Math.abs(driverController.getRightTriggerAxis() - driverController.getLeftTriggerAxis()) > 0.1);
+
+    // ----------------------------- Op Controller -------------------------------- //
+
+    private final Trigger elevatorAdjust = new Trigger(() -> Math.abs(opController.getLeftY()) > 0.9);
+    private final Trigger armAdjust = new Trigger(() -> Math.abs(opController.getRightX()) > 0.9);
+    private final Trigger alignAdjust = new Trigger(() -> Math.abs(opController.getLeftTriggerAxis()) > 0.9);
+
+    public final SendableChooser<Command> autoChooser;
+
+    public RobotContainer() {
+        switch (Constants.currentMode) {
+
+                // Real robot, instantiate hardware IO implementations
+
+            case REAL:
+                drive = new Drive(
+                        new GyroIOPigeon2(),
+                        new ModuleIOTalonFX(Constants.TUNER_CONSTANTS.FrontLeft),
+                        new ModuleIOTalonFX(Constants.TUNER_CONSTANTS.FrontRight),
+                        new ModuleIOTalonFX(Constants.TUNER_CONSTANTS.BackLeft),
+                        new ModuleIOTalonFX(Constants.TUNER_CONSTANTS.BackRight),
+                        (robotPose) -> {});
+                vision = new Vision(drive::accept, new VisionIOLimelight(camera0Name, drive::getRotation));
+                // new VisionIOLimelight(camera1Name, drive::getRotation));
+                elevator = new Elevator(new ElevatorIOReal());
+                arm = new Arm(new ArmIOReal());
+                endEffector = new EndEffector(new EndEffectorIOReal());
+                climber = new Climber(new ClimberIOReal());
+                break;
+
+                // Sim robot, instantiate physics sim IO implementations
+
+        //     case SIM:
+        //         driveSimulation = new SwerveDriveSimulation(Drive.mapleSimConfig, new Pose2d(12, 2, new Rotation2d()));
+        //         SimulatedArena.getInstance().addDriveTrainSimulation(driveSimulation);
+
+        //         drive = new Drive(
+        //                 // new GyroIOSim(driveSimulation.getGyroSimulation()),
+        //                 // new ModuleIOSim(driveSimulation.getModules()[0]),
+        //                 // new ModuleIOSim(driveSimulation.getModules()[1]),
+        //                 // new ModuleIOSim(driveSimulation.getModules()[2]),
+        //                 // new ModuleIOSim(driveSimulation.getModules()[3]),
+        //                 new GyroIO() {},
+        //                 new ModuleIO() {},
+        //                 new ModuleIO() {},
+        //                 new ModuleIO() {},
+        //                 new ModuleIO() {},
+        //                 driveSimulation::setSimulationWorldPose);
+
+        //         elevator = new Elevator(new ElevatorIOSim());
+        //         arm = new Arm(new ArmIOSim());
+        //         endEffector = new EndEffector(new EndEffectorIOSim(
+        //                 () -> driveSimulation.getSimulatedDriveTrainPose(), // drivetrain.getState().Pose,
+        //                 () -> driveSimulation.getDriveTrainSimulatedChassisVelocitiesFieldRelative(),
+        //                 () -> elevator.getElevatorPositionMeters(),
+        //                 () -> arm.getArmAngleRadsToHorizontal()));
+        //         vision = new Vision(drive::accept); // , new
+        //         // VisionIOQuestNavSim(driveSimulation::getSimulatedDriveTrainPose));
+        //         climber = new Climber(new ClimberIOSim());
+        //         break;
+
+                // Replayed robot, disable IO implementations
+
+            default:
+                elevator = new Elevator(new ElevatorIO() {});
+                arm = new Arm(new ArmIO() {});
+                endEffector = new EndEffector(new EndEffectorIO() {});
+                climber = new Climber(new ClimberIO() {});
+                break;
+        }
+
+        align = new AutoAlign(drive::getPose);
+        // if (Constants.currentMode == Constants.Mode.SIM) {
+        //     align.setRobotSupplier(driveSimulation::getSimulatedDriveTrainPose);
+        // }
+
+        setDefaultCommands();
+        registerNamedCommands();
+        autoChooser = AutoBuilder.buildAutoChooser("Right");
+        // autoChooser.addOption("Drive FF Ch", DriveCommands.feedforwardCharacterization(drive));
+        // autoChooser.addOption("red barge 2 algae", new PathPlannerAuto("untested Center 2 Algae", true));
+        SmartDashboard.putData("Auto Mode", autoChooser);
+        configureBindings();
+
+        SmarterDashboard.putString("RoboRio Serial", RobotIdentity.getRoboRioSerial());
+        SmarterDashboard.putString("Robot Identity", RobotIdentity.getRobotIdentityString());
+
+        // ------------------------------ Event Markers ---------------------------------- //
+
+        new EventTrigger("LevelStation")
+                .onTrue(new InstantCommand(() -> elevator.setElevatorStationMode())
+                        .andThen(new InstantCommand(() -> arm.setArmIntake())));
+        new EventTrigger("LevelFour")
+                .onTrue(new InstantCommand(() -> elevator.setElevatorLevelFourMode())
+                        .andThen(new InstantCommand(() -> arm.setArmL4())));
+
+        // DriverStation.silenceJoystickConnectionWarning(true);
+    }
+
+    private void configureBindings() {
+
+        // ------------------------------- Driver Bindings ------------------------------- //
+
+        // Reset gyro / odometry
+        final Runnable resetOdometry = Constants.currentMode == Constants.Mode.SIM
+                ? () -> drive.resetOdometry(new Pose2d())
+                : () -> drive.resetOdometry(new Pose2d(drive.getPose().getTranslation(), new Rotation2d()));
+        driverController.start().onTrue(Commands.runOnce(resetOdometry).ignoringDisable(true));
+
+        driverController.povLeft().whileTrue(align.reefAlignLeft(drive));
+        driverController.povRight().whileTrue(align.reefAlignRight(drive));
+        driverController.povDown().whileTrue(align.reefAlignMid(drive));
+        driverController.povUp().whileTrue(align.stationAlign(drive));
+
+        strafe_Triggers.whileTrue(DriveCommands.joystickDrive(
+                drive,
+                () -> 0,
+                () -> (driverController.getRightTriggerAxis() - driverController.getLeftTriggerAxis()) * 0.25,
+                () -> 0,
+                false));
+
+        driverController.a().onTrue(new InstantCommand(() -> drive.changeSpeedMultiplier()));
+        driverController.back().onTrue(new InstantCommand(() -> climber.zeroClimber()));
+
+        // ------------------------------- Operator Bindings ------------------------------- //
+
+        opController.start()
+                .whileTrue(new InstantCommand(() -> elevator.setZeroing(true)))
+                .onFalse(new InstantCommand(() -> elevator.stopElevator())
+                        .withTimeout(0.2)
+                        .andThen(new InstantCommand(() -> elevator.zeroElevator())
+                                .andThen(new InstantCommand(() -> elevator.setZeroing(false)))));
+
+        opController.back().onTrue(new InstantCommand(() -> elevator.setElevatorStationMode())
+                .andThen(new ConditionalCommand(
+                        new WaitCommand(0.2), Commands.none(), () -> arm.getArmMode() == ArmMode.Stowed))
+                .andThen(new InstantCommand(() -> arm.setArmIntake())));
+        opController.a().onTrue(new InstantCommand(() -> arm.setStowed())
+                .andThen(new WaitCommand(1))
+                .andThen(new InstantCommand(() -> elevator.setElevatorStowedMode())));
+        opController.x().onTrue(new InstantCommand(() -> elevator.setElevatorLevelTwoMode())
+                .andThen(new ConditionalCommand(
+                        new WaitCommand(0.2), Commands.none(), () -> arm.getArmMode() == ArmMode.Stowed))
+                .andThen(new InstantCommand(() -> arm.setArmL2())));
+        opController.b().onTrue(new InstantCommand(() -> elevator.setElevatorLevelThreeMode())
+                .andThen(new ConditionalCommand(
+                        new WaitCommand(0.2), Commands.none(), () -> arm.getArmMode() == ArmMode.Stowed))
+                .andThen(new InstantCommand(() -> arm.setArmL3())));
+        opController.y().onTrue(new InstantCommand(() -> elevator.setElevatorLevelFourMode())
+                .andThen(new ConditionalCommand(
+                        new WaitCommand(0.2), Commands.none(), () -> arm.getArmMode() == ArmMode.Stowed))
+                .andThen(new InstantCommand(() -> arm.setArmL4())));
+
+        opController.leftBumper().onTrue(new InstantCommand(() -> elevator.setCoral())
+                .andThen(new InstantCommand(() -> arm.setCoral()))
+                .andThen(new InstantCommand(() -> endEffector.setCoralMode()))
+                .andThen(new InstantCommand(() -> endEffector.stopEE())));
+        opController.rightBumper().onTrue(new InstantCommand(() -> elevator.setAlgae())
+                .andThen(new InstantCommand(() -> arm.setAlgae()))
+                .andThen(new InstantCommand(() -> endEffector.setAlgaeMode())));
+
+        opController.povUp()
+                .whileTrue(new RunCommand(() -> climber.climberUp()))
+                .onFalse(new InstantCommand(() -> climber.stop()));
+        opController.povDown()
+                .whileTrue(new RunCommand(() -> climber.climberDown()))
+                .onFalse(new InstantCommand(() -> climber.stop()));
+        opController.povLeft().onTrue(new InstantCommand(() -> climber.decrementClimbState()));
+        opController.povRight().onTrue(new InstantCommand(() -> {
+                    elevator.setElevatorStowedMode();
+                    arm.setAlgae();
+                    arm.setStowed();
+                })
+                .andThen(new WaitCommand(0.2))
+                .andThen(new InstantCommand(() -> climber.incrementClimbState())));
+
+        elevatorAdjust.whileTrue(
+                new RunCommand(() -> elevator.changeElevatorOffset(.01 * Math.signum(-opController.getLeftY()))));
+        armAdjust.whileTrue(new RunCommand(() -> arm.armAdjust(.01 * Math.signum(opController.getRightX()))));
+        alignAdjust
+                .onTrue(new InstantCommand(() -> arm.setAligning(true))
+                        .andThen(new InstantCommand(() -> elevator.setAligning(true))))
+                .onFalse(new InstantCommand(() -> arm.setAligning(false))
+                        .andThen(new InstantCommand(() -> elevator.setAligning(false))));
+
+        // if (Constants.currentMode == Constants.Mode.SIM) {
+        //     csDropLB.onTrue(new InstantCommand(() -> dropCoralFromStation(false)).ignoringDisable(true));
+        //     csDropRB.onTrue(new InstantCommand(() -> dropCoralFromStation(true)).ignoringDisable(true));
+        // }
+    }
+
+    public Command getAutonomousCommand() {
+        return autoChooser.getSelected();
+    }
+
+    public static boolean isRedAlliance() {
+        var alliance = DriverStationBackend.getAlliance();
+        if (alliance.isPresent()) {
+            return alliance.get() == Alliance.RED;
+        }
+        return false;
+    }
+
+    // -------------------------------- PathPlanner Commands -------------------------------- /w
+
+    public void registerNamedCommands() {
+        NamedCommands.registerCommand(
+                "LevelStation",
+                new InstantCommand(() -> elevator.setElevatorStationMode())
+                        .andThen(new InstantCommand(() -> arm.setArmIntake())));
+        NamedCommands.registerCommand("ElevatorStowedMode", new InstantCommand(() -> elevator.setElevatorStowedMode()));
+        NamedCommands.registerCommand(
+                "LevelTwo",
+                new InstantCommand(() -> elevator.setElevatorLevelTwoMode())
+                        .andThen(new InstantCommand(() -> arm.setArmL2())));
+        NamedCommands.registerCommand(
+                "LevelThree",
+                new InstantCommand(() -> elevator.setElevatorLevelThreeMode())
+                        .andThen(new InstantCommand(() -> arm.setArmL3())));
+        NamedCommands.registerCommand(
+                "LevelFour",
+                new InstantCommand(() -> elevator.setElevatorLevelFourMode())
+                        .andThen(new ConditionalCommand(
+                                new WaitCommand(0.2), Commands.none(), () -> arm.getArmMode() == ArmMode.Stowed))
+                        .andThen(new InstantCommand(() -> arm.setArmL4())));
+
+        NamedCommands.registerCommand("Outtake", new InstantCommand(() -> endEffector.outtakeCoral()));
+        NamedCommands.registerCommand(
+                "Intake", new RunCommand(() -> endEffector.intakeCoral()).until(() -> endEffector.hasCoral()));
+        NamedCommands.registerCommand("Stop EE", new InstantCommand(() -> endEffector.stopCoral()));
+        NamedCommands.registerCommand("Hold Coral", new InstantCommand(() -> endEffector.holdCoral()));
+        NamedCommands.registerCommand(
+                "Home Elevator",
+                new InstantCommand(() -> elevator.setZeroing(true))
+                        .withTimeout(2.5)
+                        .andThen(new InstantCommand(() -> elevator.stopElevator()))
+                        .withTimeout(0.2)
+                        .andThen(new InstantCommand(() -> elevator.zeroElevator()))
+                        .andThen(new InstantCommand(() -> elevator.setZeroing(false))));
+
+        NamedCommands.registerCommand("Stop", new InstantCommand(() -> drive.stopWithX()));
+
+        NamedCommands.registerCommand(
+                "Auto Align Left",
+                align.reefAlignLeft(drive).until(align::isAlignedDebounced).withTimeout(2));
+
+        NamedCommands.registerCommand(
+                "Auto Align Mid", align.reefAlignMid(drive).withTimeout(2));
+
+        NamedCommands.registerCommand(
+                "Auto Align Right",
+                align.reefAlignRight(drive).until(align::isAlignedDebounced).withTimeout(2));
+
+        NamedCommands.registerCommand(
+                "Auto Align Station",
+                align.stationAlign(drive).until(align::isAlignedDebounced).withTimeout(2));
+
+        NamedCommands.registerCommand(
+                "Set Algae",
+                new InstantCommand(() -> elevator.setAlgae())
+                        .andThen(new InstantCommand(() -> arm.setAlgae()))
+                        .andThen(new InstantCommand(() -> endEffector.setAlgaeMode())));
+        NamedCommands.registerCommand(
+                "Set Coral",
+                new InstantCommand(() -> elevator.setAlgae())
+                        .andThen(new InstantCommand(() -> arm.setCoral()))
+                        .andThen(new InstantCommand(() -> endEffector.setCoralMode())));
+
+        NamedCommands.registerCommand(
+                "Algae Intake", new RunCommand(() -> endEffector.intakeAlgae()).until(() -> endEffector.hasCoral()));
+        NamedCommands.registerCommand("Algae Outtake", new InstantCommand(() -> endEffector.outtakeAlgae()));
+    }
+
+    // ----------------------------------- Default Commands -------------------------------- //
+
+    public void setDefaultCommands() {
+        drive.setDefaultCommand(DriveCommands.joystickDrive(
+                drive,
+                () -> -driverController.getLeftY() * drive.getDriveMultiplier(),
+                () -> -driverController.getLeftX() * drive.getDriveMultiplier(),
+                () -> -driverController.getRightX() * drive.getTurnMultiplier(),
+                true));
+
+        elevator.setDefaultCommand(new ElevatorHold(elevator));
+        arm.setDefaultCommand(new ArmHold(arm));
+        // climber.setDefaultCommand(new ClimbCommand());
+        // ledstrip.setDefaultCommand(ledstrip.defaultCommand(() -> endEffector.isCoral()));
+    }
+
+    public void resetSimulation() {
+        if (Constants.currentMode != Constants.Mode.SIM) return;
+
+        drive.resetOdometry(new Pose2d(12, 2, new Rotation2d()));
+        // SimulatedArena.getInstance().resetFieldForAuto();
+        // AlgaeHandler.getInstance().reset();
+    }
+
+    public void displaySimFieldToAdvantageScope() {
+        if (Constants.currentMode != Constants.Mode.SIM) return;
+
+        // SimulatedArena.getInstance().simulationPeriodic();
+        // Logger.recordOutput("FieldSimulation/Pose", new Pose3d(driveSimulation.getSimulatedDriveTrainPose()));
+        // Logger.recordOutput(
+        //         "FieldSimulation/Coral", SimulatedArena.getInstance().getGamePiecesArrayByType("Coral"));
+        // Logger.recordOutput(
+        //         "FieldSimulation/Algae", SimulatedArena.getInstance().getGamePiecesArrayByType("Algae"));
+        // Logger.recordOutput(
+        //         "FieldSimulation/Staged Algae", AlgaeHandler.getInstance().periodic());
+    }
+}
